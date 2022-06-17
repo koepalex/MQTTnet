@@ -11,12 +11,12 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using MQTTnet.Client;
 using MQTTnet.Diagnostics;
 using MQTTnet.Extensions.ManagedClient;
+using MQTTnet.Formatter;
 using MQTTnet.Implementations;
 using MQTTnet.Internal;
 using MQTTnet.Protocol;
 using MQTTnet.Server;
 using MQTTnet.Tests.Mockups;
-using MqttClient = MQTTnet.Client.MqttClient;
 
 namespace MQTTnet.Tests.Client
 {
@@ -203,10 +203,46 @@ namespace MQTTnet.Tests.Client
         }
 
         [TestMethod]
+        public async Task Subscribe_Lots_Of_Topics()
+        {
+            using (var testEnvironment = CreateTestEnvironment(MqttProtocolVersion.V500))
+            {
+                await testEnvironment.StartServer();
+
+                var unmanagedClient = testEnvironment.CreateClient();
+                var managedClient = await CreateManagedClientAsync(testEnvironment, unmanagedClient, host: "broker.hivemq.com");
+
+                MqttApplicationMessage message = null;
+                managedClient.ApplicationMessageReceivedAsync += eventArgs =>
+                {
+                    message = eventArgs.ApplicationMessage;
+                    return PlatformAbstractionLayer.CompletedTask;
+                };
+                
+                for (var i = 0; i <= 100; i++)
+                {
+                    await managedClient.SubscribeAsync(i.ToString());
+                }
+                
+                await LongTestDelay();
+                
+                using (var sender = await testEnvironment.ConnectClient())
+                {
+                    await sender.PublishStringAsync("100", "Hello");
+                    await LongTestDelay();
+                }
+
+                Assert.IsNotNull(message);
+            }
+        }
+
+        [TestMethod]
         public async Task Subscriptions_And_Unsubscriptions_Are_Made_And_Reestablished_At_Reconnect()
         {
             using (var testEnvironment = CreateTestEnvironment())
             {
+                await testEnvironment.StartServer();
+                
                 var unmanagedClient = testEnvironment.CreateClient();
                 var managedClient = await CreateManagedClientAsync(testEnvironment, unmanagedClient);
 
@@ -331,6 +367,8 @@ namespace MQTTnet.Tests.Client
         {
             using (var testEnvironment = CreateTestEnvironment())
             {
+                await testEnvironment.StartServer();
+                
                 // Use a long connection check interval to verify that the subscriptions
                 // do not depend on the connection check interval anymore
                 var connectionCheckInterval = TimeSpan.FromSeconds(10);
@@ -361,8 +399,9 @@ namespace MQTTnet.Tests.Client
         {
             using (var testEnvironment = CreateTestEnvironment())
             {
+                await testEnvironment.StartServer();
+                
                 var managedClient = await CreateManagedClientAsync(testEnvironment);
-
                 var sendingClient = await testEnvironment.ConnectClient();
 
                 await managedClient.SubscribeAsync("topic");
@@ -391,10 +430,8 @@ namespace MQTTnet.Tests.Client
             TestEnvironment testEnvironment,
             IMqttClient underlyingClient = null,
             TimeSpan? connectionCheckInterval = null,
-            string host = "localhost")
+            string host = "127.0.0.1")
         {
-            await testEnvironment.StartServer();
-
             var clientOptions = new MqttClientOptionsBuilder().WithTcpServer(host, testEnvironment.ServerPort);
 
             var managedOptions = new ManagedMqttClientOptionsBuilder().WithClientOptions(clientOptions).Build();
@@ -415,12 +452,6 @@ namespace MQTTnet.Tests.Client
             return managedClient;
         }
 
-        /// <summary>
-        ///     Returns a task that will finish when the
-        ///     <paramref
-        ///         name="managedClient" />
-        ///     has connected
-        /// </summary>
         Task GetConnectedTask(ManagedMqttClient managedClient)
         {
             var connected = new TaskCompletionSource<bool>();
@@ -434,15 +465,6 @@ namespace MQTTnet.Tests.Client
             return connected.Task;
         }
 
-        /// <summary>
-        ///     Returns a task that will return the messages received on
-        ///     <paramref
-        ///         name="managedClient" />
-        ///     when
-        ///     <paramref
-        ///         name="expectedNumberOfMessages" />
-        ///     have been received
-        /// </summary>
         Task<List<MqttApplicationMessage>> SetupReceivingOfMessages(ManagedMqttClient managedClient, int expectedNumberOfMessages)
         {
             var receivedMessages = new List<MqttApplicationMessage>();
