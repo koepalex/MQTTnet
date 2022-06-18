@@ -210,7 +210,7 @@ namespace MQTTnet.Tests.Client
                 await testEnvironment.StartServer();
 
                 var unmanagedClient = testEnvironment.CreateClient();
-                var managedClient = await CreateManagedClientAsync(testEnvironment, unmanagedClient, host: "broker.hivemq.com");
+                var managedClient = await CreateManagedClientAsync(testEnvironment, unmanagedClient, host: "broker.hivemq.com", port: 1883);
 
                 MqttApplicationMessage message = null;
                 managedClient.ApplicationMessageReceivedAsync += eventArgs =>
@@ -218,14 +218,14 @@ namespace MQTTnet.Tests.Client
                     message = eventArgs.ApplicationMessage;
                     return PlatformAbstractionLayer.CompletedTask;
                 };
-                
+
                 for (var i = 0; i <= 100; i++)
                 {
                     await managedClient.SubscribeAsync(i.ToString());
                 }
-                
+
                 await LongTestDelay();
-                
+
                 using (var sender = await testEnvironment.ConnectClient())
                 {
                     await sender.PublishStringAsync("100", "Hello");
@@ -242,7 +242,7 @@ namespace MQTTnet.Tests.Client
             using (var testEnvironment = CreateTestEnvironment())
             {
                 await testEnvironment.StartServer();
-                
+
                 var unmanagedClient = testEnvironment.CreateClient();
                 var managedClient = await CreateManagedClientAsync(testEnvironment, unmanagedClient);
 
@@ -368,7 +368,7 @@ namespace MQTTnet.Tests.Client
             using (var testEnvironment = CreateTestEnvironment())
             {
                 await testEnvironment.StartServer();
-                
+
                 // Use a long connection check interval to verify that the subscriptions
                 // do not depend on the connection check interval anymore
                 var connectionCheckInterval = TimeSpan.FromSeconds(10);
@@ -400,7 +400,7 @@ namespace MQTTnet.Tests.Client
             using (var testEnvironment = CreateTestEnvironment())
             {
                 await testEnvironment.StartServer();
-                
+
                 var managedClient = await CreateManagedClientAsync(testEnvironment);
                 var sendingClient = await testEnvironment.ConnectClient();
 
@@ -430,9 +430,15 @@ namespace MQTTnet.Tests.Client
             TestEnvironment testEnvironment,
             IMqttClient underlyingClient = null,
             TimeSpan? connectionCheckInterval = null,
-            string host = "127.0.0.1")
+            string host = "127.0.0.1",
+            int? port = null)
         {
-            var clientOptions = new MqttClientOptionsBuilder().WithTcpServer(host, testEnvironment.ServerPort);
+            if (!port.HasValue)
+            {
+                port = testEnvironment.ServerPort;
+            }
+
+            var clientOptions = new MqttClientOptionsBuilder().WithTcpServer(host, port);
 
             var managedOptions = new ManagedMqttClientOptionsBuilder().WithClientOptions(clientOptions).Build();
 
